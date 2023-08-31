@@ -21,3 +21,8 @@ linters:
   - unconvert
   - wastedassign
   - zerologlint
+linters-settings:
+  revive:
+    rules:
+    - name: unused-parameter
+      disabled: true
