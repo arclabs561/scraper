@@ -13,7 +13,7 @@ require (
 	github.com/rs/zerolog v1.30.0
 	github.com/samber/lo v1.38.1
 	github.com/samber/mo v1.8.0
-	github.com/sourcegraph/conc v0.3.0
+	github.com/spf13/cobra v0.0.5
 	go.uber.org/ratelimit v0.3.0
 	gocloud.dev v0.33.0
 )
@@ -53,11 +53,13 @@ require (
 	github.com/google/flatbuffers v23.5.26+incompatible // indirect
 	github.com/google/wire v0.5.0 // indirect
 	github.com/googleapis/gax-go/v2 v2.12.0 // indirect
+	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/klauspost/compress v1.16.7 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/spf13/pflag v1.0.3 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/exp v0.0.0-20230817173708-d852ddb80c63 // indirect
