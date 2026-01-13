@@ -1,3 +1,6 @@
+//go:build test_all && !test_live_http
+// +build test_all,!test_live_http
+
 package scraper_test
 
 import (

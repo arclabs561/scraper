@@ -5,6 +5,12 @@ upgrade *deps:
   [ -z "{{deps}}" ] && go get -u ./... || go get -u {{deps}}
   go mod tidy
 
+test:
+  go test -v ./...
+
+test-live:
+  TEST_LIVE_HTTP=true go test -v ./...
+
 # Lint all the things!
 lint:
   yamlfmt -lint  # https://github.com/google/yamlfmt

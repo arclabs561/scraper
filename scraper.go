@@ -37,14 +37,15 @@ var requests atomic.Uint64
 
 var envRateLimit = "SCRAPER_RATE_LIMIT"
 var rateLimitOverride ratelimit.Limiter
-var defaultRateLimit = ratelimit.New(100)
+var defaultRateRPS = 100
+var defaultRateLimit = ratelimit.New(defaultRateRPS)
 
-var reNumbericPrefix = regexp.MustCompile(`^\d+`)
+var reNumericPrefix = regexp.MustCompile(`^\d+`)
 
 func init() {
 	rateLimitRaw, ok := os.LookupEnv(envRateLimit)
 	if !ok {
-		log.Debug().Msgf("%s not set, using default", envRateLimit)
+		// log.Debug().Msgf("%s not set, using default %d/s", envRateLimit, defaultRateRPS)
 		return
 	}
 	switch strings.ToLower(rateLimitRaw) {
@@ -61,7 +62,7 @@ func init() {
 	var opts []ratelimit.Option
 	if len(parts) == 2 {
 		per := parts[1]
-		if !reNumbericPrefix.MatchString(per) {
+		if !reNumericPrefix.MatchString(per) {
 			per = fmt.Sprintf("1%s", per)
 		}
 		dur, err := time.ParseDuration(per)
@@ -91,9 +92,9 @@ func NewScraper(
 	opts ...Option,
 ) (*Scraper, error) {
 	httpClient := retryablehttp.NewClient()
-	httpClient.HTTPClient = cleanhttp.DefaultClient() // not pooled
+	httpClient.HTTPClient = cleanhttp.DefaultClient() // not pooled, for "fresh" scraping
 	httpClient.Logger = leveledLogger{log.Ctx(ctx)}
-	httpClient.RequestLogHook = func(_ retryablehttp.Logger, req *http.Request, i int) {
+	httpClient.RequestLogHook = func(t retryablehttp.Logger, req *http.Request, i int) {
 		if rateLimitOverride != nil {
 			rateLimitOverride.Take()
 		} else {
@@ -182,7 +183,7 @@ func errPageStatusNotOK(page *Page) error {
 type FetchThrottledError struct{}
 
 func (e *FetchThrottledError) Error() string {
-	return "fetch throtted"
+	return "fetch throttled"
 }
 
 func (s *Scraper) Do(
@@ -210,7 +211,7 @@ func (s *Scraper) Do(
 			panic(fmt.Sprintf("invalid fetch option: %T", opt))
 		}
 	}
-	fn := s.fetchPlain
+	fn := s.fetchHTTP
 	if browser {
 		fn = s.fetchBrowser
 	}
@@ -280,12 +281,12 @@ type fetchFn func(
 	opts doOptions,
 ) (*Page, error)
 
-// fetchPlain retrieves the content of a given HTTP request and returns it
+// fetchHTTP retrieves the content of a given HTTP request and returns it
 // structured in a Page.
 //
 // To prevent potential DoS we use http.MaxBytesReader to cap the size of the
 // request body that can be read.
-func (s *Scraper) fetchPlain(
+func (s *Scraper) fetchHTTP(
 	ctx context.Context,
 	req *http.Request,
 	reqBody []byte,
@@ -336,6 +337,17 @@ func (s *Scraper) fetchPlain(
 		if s.respBodyLimit > 0 {
 			rdr = http.MaxBytesReader(nil, resp.Body, s.respBodyLimit)
 		}
+		// Add custom headers for original compression state
+		if resp.Uncompressed {
+			resp.Header.Add("X-Uncompressed-Content", "true")
+			// If the original content encoding is important, store that too.
+			originalContentEncoding := resp.Header.Get("Content-Encoding")
+			if originalContentEncoding != "" {
+				resp.Header.Add("X-Original-Content-Encoding", originalContentEncoding)
+			}
+		} else {
+			resp.Header.Add("X-Uncompressed-Content", "false")
+		}
 		body, err = io.ReadAll(rdr)
 		resp.Body.Close()
 		lastAttempt := i >= attemptsMax-1
@@ -377,7 +389,7 @@ func (s *Scraper) fetchPlain(
 			Version:     LatestPageVersion,
 			Source:      "http.plain",
 			RetrieveDur: time.Since(start),
-			ScrapedAt:   time.Now(),
+			FetchedAt:   time.Now(),
 			FetchDur:    dur,
 		},
 		Request: PageRequest{
@@ -388,9 +400,14 @@ func (s *Scraper) fetchPlain(
 			Body:          reqBody,
 		},
 		Response: PageResponse{
-			StatusCode: resp.StatusCode,
-			Header:     resp.Header,
-			Body:       body,
+			StatusCode:       resp.StatusCode,
+			ProtoMajor:       resp.ProtoMajor,
+			ProtoMinor:       resp.ProtoMinor,
+			TransferEncoding: resp.TransferEncoding,
+			Trailer:          resp.Trailer,
+			Body:             body,
+			ContentLength:    resp.ContentLength,
+			Header:           resp.Header,
 		},
 	}, nil
 }
@@ -473,7 +490,7 @@ func (s *Scraper) fetchBrowser(
 			for k, v := range req.Headers() {
 				r.Header.Set(k, v)
 			}
-			return s.fetchPlain(ctx, r, reqBody, opts)
+			return s.fetchHTTP(ctx, r, reqBody, opts)
 		})
 	})
 	if err != nil {
@@ -513,7 +530,7 @@ func (s *Scraper) fetchBrowser(
 		Meta: PageMeta{
 			Version:   LatestPageVersion,
 			Source:    "http.browser",
-			ScrapedAt: time.Now(),
+			FetchedAt: time.Now(),
 		},
 		Request: PageRequest{
 			URL:           req.URL.String(),
@@ -582,6 +599,7 @@ func (s *Scraper) do(
 	}
 	log.Info().
 		Stringer("url", req.URL).
+		Str("method", page.Request.Method).
 		Int("status", page.Response.StatusCode).
 		Int("resp_bytes", len(page.Response.Body)).
 		Stringer("dur", time.Since(start).Round(time.Millisecond)).
@@ -622,7 +640,7 @@ func (s *Scraper) blobKey(req *http.Request) (string, []byte, error) {
 		return "", nil, err
 	}
 	h := sha256.Sum256(buf.Bytes())
-	henc := base64.RawURLEncoding.EncodeToString(h[:])
+	henc := base64.RawURLEncoding.EncodeToString(h[:]) //nolint:misspell
 	bkey := filepath.Join(req.URL.Hostname(), henc) + ".json"
 	return bkey, body, nil
 }
@@ -687,7 +705,7 @@ type leveledLogger struct{ log *zerolog.Logger }
 
 func (l leveledLogger) fields(keysAndValues []any) *zerolog.Logger {
 	log := l.log.With().CallerWithSkipFrameCount(3)
-	for i := 0; i < len(keysAndValues); i += 2 {
+	for i := 0; i < len(keysAndValues)-1; i += 2 {
 		key := fmt.Sprintf("%v", keysAndValues[i])
 		val := keysAndValues[i+1]
 		switch val := val.(type) {
@@ -720,7 +738,7 @@ func (l leveledLogger) Debug(msg string, keysAndValues ...any) {
 	l.fields(keysAndValues).Trace().Msg(msg)
 }
 
-const LatestPageVersion = 0
+const LatestPageVersion = 1
 
 type Page struct {
 	Meta     PageMeta     `json:"meta"`
@@ -732,7 +750,7 @@ type PageMeta struct {
 	Version     uint16        `json:"version"`
 	Source      string        `json:"-"`
 	RetrieveDur time.Duration `json:"-"`
-	ScrapedAt   time.Time     `json:"scraped_at"`
+	FetchedAt   time.Time     `json:"fetched_at"`
 	FetchDur    time.Duration `json:"fetch_dur"`
 }
 
@@ -745,7 +763,12 @@ type PageRequest struct {
 }
 
 type PageResponse struct {
-	StatusCode int         `json:"status_code"`
-	Header     http.Header `json:"header,omitempty"`
-	Body       []byte      `json:"body,omitempty"`
+	StatusCode       int         `json:"status_code"`
+	ProtoMajor       int         `json:"proto_major"`
+	ProtoMinor       int         `json:"proto_minor"`
+	TransferEncoding []string    `json:"transfer_encoding,omitempty"`
+	ContentLength    int64       `json:"content_length"`
+	Header           http.Header `json:"header"`
+	Body             []byte      `json:"body"`
+	Trailer          http.Header `json:"trailer,omitempty"`
 }
