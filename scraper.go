@@ -29,7 +29,7 @@ import (
 	"github.com/samber/lo"
 	"go.uber.org/ratelimit"
 
-	"github.com/henrywallace/scraper/blob"
+	"github.com/arclabs561/scraper/blob"
 )
 
 var veryStart = time.Now()
