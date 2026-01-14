@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/henrywallace/scraper/cmd/scraper/cmd"
+	"github.com/arclabs561/scraper/cmd/scraper/cmd"
 )
 
 func main() {
