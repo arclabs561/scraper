@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/henrywallace/scraper"
+	"github.com/arclabs561/scraper"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
