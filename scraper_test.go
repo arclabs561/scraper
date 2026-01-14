@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/henrywallace/scraper"
-	"github.com/henrywallace/scraper/blob"
+	"github.com/arclabs561/scraper"
+	"github.com/arclabs561/scraper/blob"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
