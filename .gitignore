@@ -1,3 +1,6 @@
-# Default blob cache is .cache in the current directory, which for development
-# will just be the current directory.
+# Local blob cache
 .cache
+
+# Local artifacts
+file.html
+*.bak
