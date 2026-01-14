@@ -1,4 +1,4 @@
-module github.com/henrywallace/scraper
+module github.com/arclabs561/scraper
 
 go 1.21
 
